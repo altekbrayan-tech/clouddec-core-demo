@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # CONTENEDOR A: La Base de Datos Central del ERP
   clouddec-db:
@@ -12,7 +10,7 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     networks:
-      - clouddec-net
+      - dokploy-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U clouddec_user"]
       interval: 5s
@@ -20,7 +18,6 @@ services:
       retries: 5
 
   # CONTENEDOR B: El Core de Clouddec (ERP Simulado + Motor de Automatización)
-  # Este servicio escucha los cambios en la DB nativamente.
   clouddec-core-app:
     image: python:3.10-slim
     container_name: clouddec-core-app
@@ -28,7 +25,7 @@ services:
       clouddec-db:
         condition: service_healthy
     networks:
-      - clouddec-net
+      - dokploy-network
     volumes:
       - ./app:/app
     working_dir: /app
@@ -53,13 +50,13 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.logviewer.rule=Host(`core.clouddec.com`)"
-      - "traefik.http.routers.logviewer.entrypoints=websecure"
-
-      - "traefik.http.services.logviewer.loadbalancer.server.port=80"
+      - "traefik.http.routers.logviewer.entrypoints=web"
+      # Si Cloudflare maneja el SSL (Flexible/Full), usamos el puerto 8080 interno de Dozzle
+      - "traefik.http.services.logviewer.loadbalancer.server.port=8080"
 
 networks:
   dokploy-network:
-    driver: bridge
+    external: true  # Usamos la red que Dokploy ya tiene creada para el proxy
 
 volumes:
   db_data:
