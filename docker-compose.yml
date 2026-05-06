@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # CONTENEDOR A: La Base de Datos Central del ERP
+  clouddec-db:
+    image: postgres:15-alpine
+    container_name: clouddec-db
+    environment:
+      POSTGRES_USER: clouddec_user
+      POSTGRES_PASSWORD: clouddec_password
+      POSTGRES_DB: erp_core
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - clouddec-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clouddec_user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # CONTENEDOR B: El Core de Clouddec (ERP Simulado + Motor de Automatización)
+  # Este servicio escucha los cambios en la DB nativamente.
+  clouddec-core-app:
+    image: python:3.10-slim
+    container_name: clouddec-core-app
+    depends_on:
+      clouddec-db:
+        condition: service_healthy
+    networks:
+      - clouddec-net
+    volumes:
+      - ./app:/app
+    working_dir: /app
+    command: >
+      sh -c "pip install psycopg2-binary && python erp_and_automation_engine.py"
+    environment:
+      DB_HOST: clouddec-db
+      DB_NAME: erp_core
+      DB_USER: clouddec_user
+      DB_PASS: clouddec_password
+
+  # CONTENEDOR C: Visor de Logs expuesto a Internet
+  log-viewer:
+    image: amir20/dozzle:latest
+    container_name: log-viewer
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - dokploy-network
+    environment:
+      - DOZZLE_FILTER=name=clouddec-core-app
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.logviewer.rule=Host(`core.clouddec.com`)"
+      - "traefik.http.routers.logviewer.entrypoints=websecure"
+
+      - "traefik.http.services.logviewer.loadbalancer.server.port=80"
+
+networks:
+  dokploy-network:
+    driver: bridge
+
+volumes:
+  db_data:
